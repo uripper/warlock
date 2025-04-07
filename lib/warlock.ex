@@ -16,13 +16,13 @@ defmodule Warlock do
     case parse_args(args) do
       {verbose, command, sensitivity} when not is_nil(command) ->
         witch(command, verbose, sensitivity)
+
       _ ->
         IO.puts("Usage: warlock [--verbose] [--sensitivity=VALUE] <command>")
     end
   end
 
   defp parse_args(args) do
-    # Use OptionParser to handle both flags.
     {opts, remaining, _} =
       OptionParser.parse(args, switches: [verbose: :boolean, sensitivity: :string])
 
@@ -32,6 +32,7 @@ defmodule Warlock do
       case Keyword.get(opts, :sensitivity) do
         nil ->
           1.0
+
         s when is_binary(s) ->
           s =
             if String.starts_with?(s, ".") do
@@ -44,6 +45,7 @@ defmodule Warlock do
             {value, _} -> value
             :error -> 1.0
           end
+
         other ->
           other
       end
@@ -57,7 +59,7 @@ defmodule Warlock do
   def witch(command, verbose, sensitivity) do
     if verbose, do: IO.puts("Searching for '#{command}' in PATH...")
 
-    if (path = System.find_executable(command)) do
+    if path = System.find_executable(command) do
       if verbose, do: IO.puts("Exact match found: #{path}")
       IO.puts(path)
       path
@@ -65,7 +67,10 @@ defmodule Warlock do
       if verbose, do: IO.puts("Exact match not found. Gathering all executables from PATH...")
       executables = get_all_executables(verbose)
 
-      if verbose, do: IO.puts("Calculating similarities for fuzzy matching (sensitivity = #{sensitivity})...")
+      if verbose,
+        do:
+          IO.puts("Calculating similarities for fuzzy matching (sensitivity = #{sensitivity})...")
+
       matches =
         executables
         |> Enum.map(fn exe -> {exe, similarity(command, exe, sensitivity, verbose)} end)
@@ -97,6 +102,7 @@ defmodule Warlock do
           {:ok, files} ->
             if verbose, do: IO.puts("Found #{length(files)} files in #{dir}")
             files
+
           _ ->
             if verbose, do: IO.puts("Could not list files in #{dir}")
             []
@@ -123,15 +129,18 @@ defmodule Warlock do
       header =
         pad_string("Suggested Command", cmd_width) <>
           " | " <> pad_string("Location", path_width)
+
       IO.puts(header)
       IO.puts(String.duplicate("-", cmd_width + path_width + 3))
 
       Enum.each(valid_matches, fn {suggestion, _sim} ->
         highlighted = highlight_differences(command, suggestion)
         suggestion_path = System.find_executable(suggestion)
+
         line =
           pad_string(highlighted, cmd_width) <>
             " | " <> pad_string(suggestion_path, path_width)
+
         IO.puts(line)
       end)
     end
@@ -182,6 +191,7 @@ defmodule Warlock do
     b = String.downcase(b)
     dist = levenshtein(a, b, sensitivity)
     max_len = max(String.length(a), String.length(b))
+
     if max_len == 0 do
       1.0
     else
