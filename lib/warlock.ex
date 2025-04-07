@@ -70,21 +70,31 @@ defmodule Warlock do
     cmd_width = 20
     path_width = 50
 
-    header =
-      pad_string("Suggested Command", cmd_width) <>
-        " | " <> pad_string("Location", path_width)
-    IO.puts(header)
-    IO.puts(String.duplicate("-", cmd_width + path_width + 3))
+    # Filter out any suggestions for which the executable isn’t found.
+    valid_matches =
+      matches
+      |> Enum.filter(fn {suggestion, _sim} -> System.find_executable(suggestion) != nil end)
 
-    Enum.each(matches, fn {suggestion, _sim} ->
-      highlighted = highlight_differences(command, suggestion)
-      suggestion_path = System.find_executable(suggestion) || "(not found in PATH)"
-      line =
-        pad_string(highlighted, cmd_width) <>
-          " | " <> pad_string(suggestion_path, path_width)
-      IO.puts(line)
-    end)
+    if valid_matches == [] do
+      IO.puts("Command not found and no close matches.")
+    else
+      header =
+        pad_string("Suggested Command", cmd_width) <>
+          " | " <> pad_string("Location", path_width)
+      IO.puts(header)
+      IO.puts(String.duplicate("-", cmd_width + path_width + 3))
+
+      Enum.each(valid_matches, fn {suggestion, _sim} ->
+        highlighted = highlight_differences(command, suggestion)
+        suggestion_path = System.find_executable(suggestion)
+        line =
+          pad_string(highlighted, cmd_width) <>
+            " | " <> pad_string(suggestion_path, path_width)
+        IO.puts(line)
+      end)
+    end
   end
+
 
   # Pads the given text with spaces so that its visible width is at least `width`.
   # (ANSI escape codes are ignored for width calculation.)
