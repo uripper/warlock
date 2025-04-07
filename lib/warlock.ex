@@ -3,7 +3,7 @@ defmodule Warlock do
   A smarter 'which' command with fuzzy matching.
 
   Usage:
-      warlock <command>
+      warlock [--verbose] [--sensitivity=VALUE] <command>
   """
 
   @ansi_green IO.ANSI.green()
@@ -13,25 +13,62 @@ defmodule Warlock do
 
   # Public entry point called by the escript runtime.
   def main(args) do
-    case args do
-      [command] ->
-        witch(command)
+    case parse_args(args) do
+      {verbose, command, sensitivity} when not is_nil(command) ->
+        witch(command, verbose, sensitivity)
       _ ->
-        IO.puts("Usage: warlock <command>")
+        IO.puts("Usage: warlock [--verbose] [--sensitivity=VALUE] <command>")
     end
+  end
+
+  defp parse_args(args) do
+    # Use OptionParser to handle both flags.
+    {opts, remaining, _} =
+      OptionParser.parse(args, switches: [verbose: :boolean, sensitivity: :string])
+
+    verbose = Keyword.get(opts, :verbose, false)
+
+    sensitivity =
+      case Keyword.get(opts, :sensitivity) do
+        nil ->
+          1.0
+        s when is_binary(s) ->
+          s =
+            if String.starts_with?(s, ".") do
+              "0" <> s
+            else
+              s
+            end
+
+          case Float.parse(s) do
+            {value, _} -> value
+            :error -> 1.0
+          end
+        other ->
+          other
+      end
+
+    command = List.first(remaining)
+    {verbose, command, sensitivity}
   end
 
   # Attempts to locate an executable in the system PATH. If an exact match isn’t found,
   # performs fuzzy matching against all executables in the PATH.
-  def witch(command) do
+  def witch(command, verbose, sensitivity) do
+    if verbose, do: IO.puts("Searching for '#{command}' in PATH...")
+
     if (path = System.find_executable(command)) do
+      if verbose, do: IO.puts("Exact match found: #{path}")
       IO.puts(path)
       path
     else
-      executables = get_all_executables()
+      if verbose, do: IO.puts("Exact match not found. Gathering all executables from PATH...")
+      executables = get_all_executables(verbose)
+
+      if verbose, do: IO.puts("Calculating similarities for fuzzy matching (sensitivity = #{sensitivity})...")
       matches =
         executables
-        |> Enum.map(fn exe -> {exe, similarity(command, exe)} end)
+        |> Enum.map(fn exe -> {exe, similarity(command, exe, sensitivity, verbose)} end)
         |> Enum.filter(fn {_exe, sim} -> sim >= 0.6 end)
         |> Enum.sort_by(fn {_exe, sim} -> -sim end)
         |> Enum.take(5)
@@ -40,7 +77,7 @@ defmodule Warlock do
         IO.puts("Command not found and no close matches.")
       else
         IO.puts("\nCommand '#{command}' not found. Close matches:\n")
-        print_suggestions_table(matches, command)
+        print_suggestions_table(matches, command, verbose)
       end
 
       nil
@@ -48,29 +85,34 @@ defmodule Warlock do
   end
 
   # Returns a list of all filenames found in directories specified by the PATH.
-  defp get_all_executables do
-    # Get the PATH environment variable (or empty string if not set)
+  defp get_all_executables(verbose) do
     path_env = System.get_env("PATH") || ""
-    # Choose the separator based on the OS type: ";" on Windows, ":" otherwise.
     separator = if match?({:win32, _}, :os.type()), do: ";", else: ":"
-    path_env
-    |> String.split(separator)
-    |> Enum.flat_map(fn dir ->
-      case File.ls(dir) do
-        {:ok, files} -> files
-        _ -> []
-      end
-    end)
-    |> Enum.uniq()
+
+    executables =
+      path_env
+      |> String.split(separator)
+      |> Enum.flat_map(fn dir ->
+        case File.ls(dir) do
+          {:ok, files} ->
+            if verbose, do: IO.puts("Found #{length(files)} files in #{dir}")
+            files
+          _ ->
+            if verbose, do: IO.puts("Could not list files in #{dir}")
+            []
+        end
+      end)
+      |> Enum.uniq()
+
+    if verbose, do: IO.puts("Total unique executables found: #{length(executables)}")
+    executables
   end
 
   # Prints a formatted table of suggestions.
-  # Each row shows the suggested command (with differences highlighted) and its full path.
-  defp print_suggestions_table(matches, command) do
+  defp print_suggestions_table(matches, command, _verbose) do
     cmd_width = 20
     path_width = 50
 
-    # Filter out any suggestions for which the executable isn’t found.
     valid_matches =
       matches
       |> Enum.filter(fn {suggestion, _sim} -> System.find_executable(suggestion) != nil end)
@@ -95,22 +137,16 @@ defmodule Warlock do
     end
   end
 
-
-  # Pads the given text with spaces so that its visible width is at least `width`.
-  # (ANSI escape codes are ignored for width calculation.)
   defp pad_string(text, width) do
     visible = strip_ansi(text)
     pad = max(width - String.length(visible), 0)
     text <> String.duplicate(" ", pad)
   end
 
-  # Removes ANSI escape sequences from a string.
   defp strip_ansi(text) do
     Regex.replace(~r/\e\[[0-9;]*m/, text, "")
   end
 
-  # Returns a highlighted version of `suggestion` relative to `input`.
-  # Matching characters are in green; differing ones in red; extra characters (if any) in magenta.
   defp highlight_differences(input, suggestion) do
     input_chars = String.graphemes(input)
     sugg_chars = String.graphemes(suggestion)
@@ -140,12 +176,11 @@ defmodule Warlock do
     highlighted <> extra
   end
 
-  # Computes a similarity score between two strings based on the Levenshtein distance.
-  # The score is 1.0 for an exact match and decreases as the distance increases.
-  defp similarity(a, b) do
+  defp similarity(a, b, sensitivity, verbose) do
+    if verbose, do: IO.puts("Comparing: #{a} and #{b}, Sensitivity: #{sensitivity}")
     a = String.downcase(a)
     b = String.downcase(b)
-    dist = levenshtein(a, b)
+    dist = levenshtein(a, b, sensitivity)
     max_len = max(String.length(a), String.length(b))
     if max_len == 0 do
       1.0
@@ -154,32 +189,45 @@ defmodule Warlock do
     end
   end
 
-  # Computes the Levenshtein distance between two strings using dynamic programming.
-  defp levenshtein(a, b) do
+  defp levenshtein(a, b, sensitivity) do
     a_chars = String.graphemes(a)
     b_chars = String.graphemes(b)
-    _la = length(a_chars)
+    la = length(a_chars)
     lb = length(b_chars)
 
-    # Initialize the first row.
-    initial = Enum.to_list(0..lb)
+    matrix =
+      for i <- 0..la do
+        for j <- 0..lb do
+          cond do
+            i == 0 -> j
+            j == 0 -> i
+            true -> 0
+          end
+        end
+      end
 
-    Enum.reduce(a_chars, initial, fn ca, prev_row ->
-      current_row = [List.first(prev_row) + 1]
+    matrix =
+      Enum.reduce(1..la, matrix, fn i, m ->
+        Enum.reduce(1..lb, m, fn j, m_inner ->
+          cost =
+            if Enum.at(a_chars, i - 1) == Enum.at(b_chars, j - 1),
+              do: 0,
+              else: sensitivity
 
-      current_row =
-        Enum.with_index(b_chars)
-        |> Enum.reduce(current_row, fn {cb, j}, row ->
-          cost = if ca == cb, do: 0, else: 1
-          insertion = List.last(row) + 1
-          deletion = Enum.at(prev_row, j + 1) + 1
-          substitution = Enum.at(prev_row, j) + cost
-          cell = min(insertion, min(deletion, substitution))
-          row ++ [cell]
+          deletion = Enum.at(Enum.at(m_inner, i - 1), j) + 1
+          insertion = Enum.at(Enum.at(m_inner, i), j - 1) + 1
+          substitution = Enum.at(Enum.at(m_inner, i - 1), j - 1) + cost
+          cell = min(deletion, min(insertion, substitution))
+          update_matrix(m_inner, i, j, cell)
         end)
+      end)
 
-      current_row
+    Enum.at(Enum.at(matrix, la), lb)
+  end
+
+  defp update_matrix(matrix, i, j, value) do
+    List.update_at(matrix, i, fn row ->
+      List.replace_at(row, j, value)
     end)
-    |> List.last()
   end
 end
