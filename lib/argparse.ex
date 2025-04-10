@@ -91,13 +91,22 @@ defmodule Argparse do
         nil ->
           default_threshold
 
-        t when is_binary(t) ->
-          t =
-            if String.starts_with?(t, ".") do
-              "0" <> t
-            else
-              t
-            end
+    t when is_binary(t) ->
+      t =
+        if String.starts_with?(t, ".") do
+          "0" <> t
+        else
+          t
+        end
+      # Parse threshold value and provide feedback if it is invalid.
+      case Float.parse(t) do
+        {value, ""} when value >= 0.0 and value <= 1.0 ->
+          value
+        _ ->
+          require Logger
+          Logger.warn("Invalid threshold value: #{t}. Using default #{default_threshold}")
+          default_threshold
+      end
 
           case Float.parse(t) do
             {value, _} ->
