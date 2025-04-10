@@ -17,6 +17,7 @@ defmodule Witch do
     if verbose do
       IO.puts("Searching for '#{command}' in PATH...")
       IO.puts("Sensitivity: #{sensitivity}, Algorithm: #{algorithm}, Threshold: #{threshold}")
+
       IO.puts(
         "Ignoring: #{Enum.join(ignore, ", ")}, Ignored Directories: #{Enum.join(ignoredir, ", ")}"
       )
@@ -69,7 +70,9 @@ defmodule Witch do
       |> String.split(separator)
       |> Enum.flat_map(fn dir ->
         # Skip this directory if it should be ignored
-        if Enum.any?(ignoredir, fn ignore_dir -> String.contains?(dir, ignore_dir) end) do
+        if Enum.any?(ignoredir, fn pattern ->
+             Regex.match?(~r/^#{Regex.escape(pattern)}$/, dir)
+           end) do
           []
         else
           case File.ls(dir) do
