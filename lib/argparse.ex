@@ -100,8 +100,15 @@ defmodule Argparse do
             end
 
           case Float.parse(t) do
-            {value, _} -> value
-            :error -> default_threshold
+            {value, _} ->
+              if value >= 0.0 and value <= 1.0 do
+                value
+              else
+                default_threshold
+              end
+
+            :error ->
+              default_threshold
           end
 
         _ ->
