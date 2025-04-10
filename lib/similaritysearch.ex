@@ -6,8 +6,7 @@ defmodule Similaritysearch do
   @doc """
   Function to calculate similarity between two items.
   """
-def similarity(a, b, sensitivity, verbose, algorithm) do
-  if verbose, do: IO.puts("Comparing: #{a} and #{b}, Sensitivity: #{sensitivity}, Algorithm: #{algorithm}")
+def similarity(a, b, sensitivity, _verbose, algorithm) do
   a = String.downcase(a)
   b = String.downcase(b)
 

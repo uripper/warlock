@@ -1,8 +1,11 @@
 defmodule Witch do
-    # Attempts to locate an executable in the system PATH. If an exact match isn’t found,
+  # Attempts to locate an executable in the system PATH. If an exact match isn’t found,
   # performs fuzzy matching against all executables in the PATH.
-  def witch(command, verbose, sensitivity, algorithm) do
-    if verbose, do: IO.puts("Searching for '#{command}' in PATH...")
+  def witch(command, verbose, sensitivity, algorithm, threshold, num_matches) do
+    if verbose do
+      IO.puts("Searching for '#{command}' in PATH...")
+      IO.puts("Sensitivity: #{sensitivity}, Algorithm: #{algorithm}, Threshold: #{threshold}")
+    end
 
     if path = System.find_executable(command) do
       if verbose, do: IO.puts("Exact match found: #{path}")
@@ -12,16 +15,15 @@ defmodule Witch do
       if verbose, do: IO.puts("Exact match not found. Gathering all executables from PATH...")
       executables = get_all_executables(verbose)
 
-      if verbose,
-        do:
-          IO.puts("Calculating similarities for fuzzy matching (sensitivity = #{sensitivity})...")
 
       matches =
         executables
-        |> Enum.map(fn exe -> {exe, Similaritysearch.similarity(command, exe, sensitivity, verbose, algorithm)} end)
-        |> Enum.filter(fn {_exe, sim} -> sim >= 0.6 end)
+        |> Enum.map(fn exe ->
+          {exe, Similaritysearch.similarity(command, exe, sensitivity, verbose, algorithm)}
+        end)
+        |> Enum.filter(fn {_exe, sim} -> sim >= threshold end)
         |> Enum.sort_by(fn {_exe, sim} -> -sim end)
-        |> Enum.take(5)
+        |> Enum.take(num_matches)
 
       if matches == [] do
         IO.puts("Command not found and no close matches.")
@@ -45,11 +47,9 @@ defmodule Witch do
       |> Enum.flat_map(fn dir ->
         case File.ls(dir) do
           {:ok, files} ->
-            if verbose, do: IO.puts("Found #{length(files)} files in #{dir}")
             files
 
           _ ->
-            if verbose, do: IO.puts("Could not list files in #{dir}")
             []
         end
       end)
