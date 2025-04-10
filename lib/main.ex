@@ -14,8 +14,8 @@ defmodule Warlock do
 
   def main(args) do
     case Argparse.parse_args(args) do
-      {verbose, command, sensitivity, algorithm, threshold, num_matches} when not is_nil(command) ->
-        Witch.witch(command, verbose, sensitivity, algorithm, threshold, num_matches)
+      {verbose, command, sensitivity, algorithm, threshold, num_matches, ignore, ignoredir} when not is_nil(command) ->
+        Witch.witch(command, verbose, sensitivity, algorithm, threshold, num_matches, ignore, ignoredir)
 
       _ ->
         IO.puts("Usage: warlock [--verbose] [--threshold=0-1.0] [--algorithm=[\"lev\", \"jw\"]] <command>")
