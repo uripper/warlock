@@ -124,7 +124,7 @@ defmodule Argparse do
           parsed
 
         {_parsed, ""} ->
-          IO.puts("Matches must be at least 1.")
+          IO.puts(:stderr, "Matches must be at least 1.")
           System.halt(1)
 
         _ ->
