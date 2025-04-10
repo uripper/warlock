@@ -51,6 +51,7 @@ defmodule Similaritysearch do
       case algorithm do
         :levenshtein ->
           max_len = max(String.length(a), String.length(b))
+
           if max_len == 0 do
             1.0
           else
@@ -61,15 +62,6 @@ defmodule Similaritysearch do
         :jaro_winkler ->
           # Jaro-Winkler directly provides a similarity score.
           jaro_winkler(a, b)
-
-        _ ->
-          # Default to the Levenshtein-based similarity.
-          max_len = max(String.length(a), String.length(b))
-          if max_len == 0 do
-            1.0
-          else
-            1.0 - levenshtein(a, b, sensitivity) / max_len
-          end
       end
 
     similarity_score
@@ -162,7 +154,8 @@ defmodule Similaritysearch do
                 {false, s2_m}
               else
                 Enum.reduce_while(low..high, {false, s2_m}, fn j, {found, acc} ->
-                  if not found and not Enum.at(acc, j) and Enum.at(s1_chars, i) == Enum.at(s2_chars, j) do
+                  if not found and not Enum.at(acc, j) and
+                       Enum.at(s1_chars, i) == Enum.at(s2_chars, j) do
                     {:halt, {true, List.replace_at(acc, j, true)}}
                   else
                     {:cont, {found, acc}}
