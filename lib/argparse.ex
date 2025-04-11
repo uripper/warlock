@@ -104,7 +104,7 @@ defmodule Argparse do
           value
         _ ->
           require Logger
-          Logger.warn("Invalid threshold value: #{t}. Using default #{default_threshold}")
+          Logger.warning("Invalid threshold value: #{t}. Using default #{default_threshold}")
           default_threshold
       end
 
