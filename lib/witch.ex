@@ -1,9 +1,17 @@
 defmodule Witch do
-  # ===============================================================
-  # Main function: Searches for a command, first looking for an exact match.
-  # If not found, performs fuzzy matching against executables in PATH,
-  # excluding files in ignored directories and files matching ignore patterns.
-  # ===============================================================
+  @moduledoc """
+  A command-line utility for finding executables in the system PATH.
+  """
+  @spec witch(
+          nil | binary(),
+          boolean(),
+          float(),
+          :jaro_winkler | :levenshtein,
+          float(),
+          pos_integer(),
+          list(binary()),
+          list(binary())
+        ) :: nil | binary()
   def witch(
         command,
         verbose,
@@ -54,6 +62,25 @@ defmodule Witch do
     end
   end
 
+  defp collect_from_dir(dir, ignore_patterns, ignored_dirs) do
+    if ignore_dir?(dir, ignored_dirs) do
+      []
+    else
+      case File.ls(dir) do
+        {:ok, files} -> Enum.reject(files, &ignore_file?(&1, ignore_patterns))
+        _error -> []
+      end
+    end
+  end
+
+  defp ignore_dir?(dir, ignored_dirs) do
+    Enum.any?(ignored_dirs, &Regex.match?(~r/^#{Regex.escape(&1)}$/, dir))
+  end
+
+  defp ignore_file?(file, patterns) do
+    Enum.any?(patterns, &String.contains?(file, &1))
+  end
+
   # ===============================================================
   # get_all_executables/3
   #
@@ -61,38 +88,14 @@ defmodule Witch do
   # excluding directories matching any pattern in ignoredir and files that
   # include any of the ignore patterns.
   # ===============================================================
-  defp get_all_executables(verbose, ignore, ignoredir) do
-    path_env = System.get_env("PATH") || ""
-    separator = if match?({:win32, _}, :os.type()), do: ";", else: ":"
+  defp get_all_executables(verbose, ignore_patterns, ignored_dirs) do
+    separator =
+      if match?({:win32, _}, :os.type()), do: ";", else: ":"
 
     executables =
-      path_env
-      |> String.split(separator)
-      |> Enum.flat_map(fn dir ->
-        # Skip this directory if it should be ignored
-        if Enum.any?(ignoredir, fn pattern ->
-             Regex.match?(~r/^#{Regex.escape(pattern)}$/, dir)
-           end) do
-          []
-        else
-          case File.ls(dir) do
-            {:ok, files} ->
-              # Filter out files that match the ignore patterns.
-              filtered_files =
-                files
-                |> Enum.reject(fn file ->
-                  Enum.any?(ignore, fn ignore_pattern ->
-                    String.contains?(file, ignore_pattern)
-                  end)
-                end)
-
-              filtered_files
-
-            _ ->
-              []
-          end
-        end
-      end)
+      System.get_env("PATH", "")
+      |> String.split(separator, trim: true)
+      |> Enum.flat_map(&collect_from_dir(&1, ignore_patterns, ignored_dirs))
       |> Enum.uniq()
 
     if verbose, do: IO.puts("Total unique executables found: #{length(executables)}")

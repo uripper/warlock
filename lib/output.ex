@@ -54,12 +54,13 @@ defmodule Output do
       # Build Table Header
       header =
         pad_string("Suggested Command", cmd_width) <>
-          " | " <> pad_string("Location", path_width) <>
-          (if verbose, do: " | " <> pad_string("Similarity", 10), else: "")
+          " | " <>
+          pad_string("Location", path_width) <>
+          if verbose, do: " | " <> pad_string("Similarity", 10), else: ""
 
       IO.puts(header)
 
-      sep_length = cmd_width + path_width + 3 + (if verbose, do: 13, else: 0)
+      sep_length = cmd_width + path_width + 3 + if verbose, do: 13, else: 0
       IO.puts(String.duplicate("-", sep_length))
 
       # Iterate and Print Matches
@@ -72,40 +73,48 @@ defmodule Output do
             " | " <> pad_string(suggestion_path, path_width)
 
         line =
-          if verbose do
-            similarity_str = :io_lib.format("~.2f", [sim]) |> IO.iodata_to_binary()
-            base_line <> " | " <> pad_string(similarity_str, 10)
-          else
-            base_line
-          end
+          base_line <>
+            format_similarity(sim, verbose)
 
         IO.puts(line)
       end)
     end
   end
 
-  #=============================================================
+  # ===========================================
+  # Formats the similarity score for display.
+  # ===========================================
+  defp format_similarity(similarity, verbose) do
+    if verbose do
+      similarity_str = :io_lib.format("~.2f", [similarity]) |> IO.iodata_to_binary()
+      " | " <> pad_string(similarity_str, 10)
+    else
+      ""
+    end
+  end
+
+  # =============================================================
   # Pads a string with spaces until it reaches the given width.
-  #=============================================================
+  # =============================================================
   defp pad_string(text, width) do
     visible = strip_ansi(text)
     pad = max(width - String.length(visible), 0)
     text <> String.duplicate(" ", pad)
   end
 
-  #=========================================
+  # =========================================
   # Strips ANSI escape codes from a string.
-  #=========================================
+  # =========================================
   defp strip_ansi(text) do
     Regex.replace(~r/\e\[[0-9;]*m/, text, "")
   end
 
-  #================================================================================
+  # ================================================================================
   # Highlights differences between the input command and a suggestion.
   #
   # Matching characters are colored green, mismatches red, and extra characters in
   # the suggestion (if any) are colored magenta.
-  #================================================================================
+  # ================================================================================
   defp highlight_differences(input, suggestion) do
     input_chars = String.graphemes(input)
     sugg_chars = String.graphemes(suggestion)
@@ -113,21 +122,19 @@ defmodule Output do
 
     highlighted =
       common
-      |> Enum.map(fn {c1, c2} ->
+      |> Enum.map_join(fn {c1, c2} ->
         if c1 == c2 do
           "#{@ansi_green}#{c2}#{@ansi_reset}"
         else
           "#{@ansi_red}#{c2}#{@ansi_reset}"
         end
       end)
-      |> Enum.join("")
 
     extra =
       if length(sugg_chars) > length(input_chars) do
         sugg_chars
         |> Enum.drop(length(input_chars))
-        |> Enum.map(&"#{@ansi_magenta}#{&1}#{@ansi_reset}")
-        |> Enum.join("")
+        |> Enum.map_join(&"#{@ansi_magenta}#{&1}#{@ansi_reset}")
       else
         ""
       end
