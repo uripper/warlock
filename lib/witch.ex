@@ -44,10 +44,15 @@ defmodule Witch do
 
       matches =
         executables
-        |> Enum.map(fn exe ->
-          {exe, Similaritysearch.similarity(command, exe, sensitivity, verbose, algorithm)}
-        end)
-        |> Enum.filter(fn {_exe, sim} -> sim >= threshold end)
+        |> Task.async_stream(
+          fn exe ->
+            {exe, Similaritysearch.similarity(command, exe, sensitivity, verbose, algorithm)}
+          end,
+          ordered: false,
+          max_concurrency: System.schedulers_online() * 2
+        )
+        |> Stream.map(fn {:ok, result} -> result end)
+        |> Stream.filter(fn {_exe, sim} -> sim >= threshold end)
         |> Enum.sort_by(fn {_exe, sim} -> -sim end)
         |> Enum.take(num_matches)
 
@@ -86,7 +91,7 @@ defmodule Witch do
   #
   # Returns a list of filenames found in directories specified by the PATH,
   # excluding directories matching any pattern in ignoredir and files that
-  # include any of the ignore patterns.
+  # include any of the ignore patterns. Uses parallel processing for improved performance.
   # ===============================================================
   defp get_all_executables(verbose, ignore_patterns, ignored_dirs) do
     separator =
@@ -95,7 +100,12 @@ defmodule Witch do
     executables =
       System.get_env("PATH", "")
       |> String.split(separator, trim: true)
-      |> Enum.flat_map(&collect_from_dir(&1, ignore_patterns, ignored_dirs))
+      |> Task.async_stream(
+        fn dir -> collect_from_dir(dir, ignore_patterns, ignored_dirs) end,
+        ordered: false,
+        timeout: 10_000
+      )
+      |> Enum.flat_map(fn {:ok, files} -> files end)
       |> Enum.uniq()
 
     if verbose, do: IO.puts("Total unique executables found: #{length(executables)}")

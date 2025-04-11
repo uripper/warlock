@@ -24,4 +24,8 @@ warlock-*.tar
 
 mix.lock
 
-/test/
+/test/*
+
+.formatter.exs
+
+STYLEGUIDE.md
