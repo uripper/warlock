@@ -9,8 +9,8 @@ defmodule Witch do
           :jaro_winkler | :levenshtein,
           float(),
           pos_integer(),
-          list(binary()),
-          list(binary())
+          [binary()],
+          [binary()]
         ) :: nil | binary()
   def witch(
         command,
@@ -25,7 +25,6 @@ defmodule Witch do
     if verbose do
       IO.puts("Searching for '#{command}' in PATH...")
       IO.puts("Sensitivity: #{sensitivity}, Algorithm: #{algorithm}, Threshold: #{threshold}")
-
       IO.puts(
         "Ignoring: #{Enum.join(ignore, ", ")}, Ignored Directories: #{Enum.join(ignoredir, ", ")}"
       )
@@ -73,8 +72,18 @@ defmodule Witch do
     end
   end
 
+  # ----------------------------------------------------------------------------
+  # ignore_dir?/2:
+  #
+  # This implementation converts both the directory path and the ignore pattern
+  # to upper case so that the match is case-insensitive. Then it checks if the
+  # directory path contains the ignored substring.
+  # ----------------------------------------------------------------------------
   defp ignore_dir?(dir, ignored_dirs) do
-    Enum.any?(ignored_dirs, &Regex.match?(~r/^#{Regex.escape(&1)}$/, dir))
+    dir_up = String.upcase(dir)
+    Enum.any?(ignored_dirs, fn pattern ->
+      String.contains?(dir_up, String.upcase(pattern))
+    end)
   end
 
   defp ignore_file?(file, patterns) do
@@ -85,8 +94,8 @@ defmodule Witch do
   # get_all_executables/3
   #
   # Returns a list of filenames found in directories specified by the PATH,
-  # excluding directories matching any pattern in ignoredir and files that
-  # include any of the ignore patterns.
+  # excluding directories that contain any of the ignoredir patterns and files
+  # that include any of the ignore patterns. This version is sequential.
   # ===============================================================
   defp get_all_executables(verbose, ignore_patterns, ignored_dirs) do
     separator =
@@ -95,7 +104,7 @@ defmodule Witch do
     executables =
       System.get_env("PATH", "")
       |> String.split(separator, trim: true)
-      |> Enum.flat_map(&collect_from_dir(&1, ignore_patterns, ignored_dirs))
+      |> Enum.flat_map(fn dir -> collect_from_dir(dir, ignore_patterns, ignored_dirs) end)
       |> Enum.uniq()
 
     if verbose, do: IO.puts("Total unique executables found: #{length(executables)}")

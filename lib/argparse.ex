@@ -9,20 +9,25 @@ defmodule Argparse do
   @default_sensitivity 1.0
   @default_threshold 0.75
   @default_matches 5
+
   @spec parse_args([String.t()]) ::
           {boolean, String.t() | nil, float, atom, float, pos_integer, [String.t()], [String.t()]}
   def parse_args(args) do
-    {opts, remaining, _} = OptionParser.parse(args, switches: switches())
+    {opts, remaining, _} =
+      OptionParser.parse(args,
+        switches: switches()
+      )
 
     handle_help_and_version(opts)
 
     verbose = Keyword.get(opts, :verbose, false)
-    sensitivity = parse_sensitivity(opts[:sensitivity])
-    algorithm = parse_algorithm(opts[:algorithm])
-    threshold = parse_threshold(opts[:threshold])
-    num_matches = parse_matches(opts[:matches])
-    ignore = parse_ignore_option(opts[:ignore])
-    ignoredir = parse_ignore_option(opts[:ignoredir])
+    sensitivity = parse_sensitivity(Keyword.get(opts, :sensitivity))
+    algorithm = parse_algorithm(Keyword.get(opts, :algorithm))
+    threshold = parse_threshold(Keyword.get(opts, :threshold))
+    num_matches = parse_matches(Keyword.get(opts, :matches))
+    ignore = parse_list_option(Keyword.get(opts, :ignore, ""))
+    ignoredir = parse_list_option(Keyword.get(opts, :ignoredir, ""))
+
     command = List.first(remaining)
 
     {verbose, command, sensitivity, algorithm, threshold, num_matches, ignore, ignoredir}
@@ -87,12 +92,16 @@ defmodule Argparse do
   # =============
   defp parse_sensitivity(nil), do: @default_sensitivity
 
-  defp parse_sensitivity(str) when is_binary(str) do
-    str
-    |> ensure_leading_zero()
-    |> Float.parse()
-    |> case do
-      {v, _} -> v
+  defp parse_sensitivity(s) when is_binary(s) do
+    s =
+      if String.starts_with?(s, ".") do
+        "0" <> s
+      else
+        s
+      end
+
+    case Float.parse(s) do
+      {value, _} -> value
       :error -> @default_sensitivity
     end
   end
@@ -114,17 +123,23 @@ defmodule Argparse do
   # ============
   defp parse_threshold(nil), do: @default_threshold
 
-  defp parse_threshold(str) when is_binary(str) do
-    value =
-      str
-      |> ensure_leading_zero()
-      |> Float.parse()
-      |> case do
-        {v, ""} when v >= 0.0 and v <= 1.0 -> v
-        _ -> log_invalid(:threshold, str, @default_threshold)
+  defp parse_threshold(t) when is_binary(t) do
+    t =
+      if String.starts_with?(t, ".") do
+        "0" <> t
+      else
+        t
       end
 
-    value
+    case Float.parse(t) do
+      {value, ""} when value >= 0.0 and value <= 1.0 ->
+        value
+
+      _ ->
+        require Logger
+        Logger.warning("Invalid threshold value: #{t}. Using default #{@default_threshold}")
+        @default_threshold
+    end
   end
 
   defp parse_threshold(_), do: @default_threshold
@@ -134,8 +149,8 @@ defmodule Argparse do
   # ========
   defp parse_matches(nil), do: @default_matches
 
-  defp parse_matches(str) when is_binary(str) do
-    case Integer.parse(str) do
+  defp parse_matches(s) when is_binary(s) do
+    case Integer.parse(s) do
       {n, ""} when n >= 1 ->
         n
 
@@ -146,24 +161,14 @@ defmodule Argparse do
   end
 
   # =========================================
-  # Ignore directories and ignore extensions
+  # List options: ignore and ignoredir
   # =========================================
-  defp parse_ignore_option(nil), do: []
-  defp parse_ignore_option(""), do: []
-  defp parse_ignore_option(str), do: String.split(str, ",")
+  defp parse_list_option(""), do: []
 
-  # =========================================
-  # Ensure leading zero for float parsing
-  # =========================================
-  defp ensure_leading_zero("." <> rest), do: "0." <> rest
-  defp ensure_leading_zero(other), do: other
-
-  # ===================
-  # Log invalid values
-  # ===================
-  defp log_invalid(name, value, default) do
-    require Logger
-    Logger.warning("Invalid #{name} value: #{value}. Using default #{default}")
-    default
+  defp parse_list_option(s) when is_binary(s) do
+    s
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
   end
+
 end
