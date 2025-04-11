@@ -21,3 +21,7 @@ warlock-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+mix.lock
+
+/test/
