@@ -2,6 +2,7 @@ defmodule Witch do
   @moduledoc """
   A command-line utility for finding executables in the system PATH.
   """
+
   @spec witch(
           nil | binary(),
           boolean(),
@@ -9,8 +10,8 @@ defmodule Witch do
           :jaro_winkler | :levenshtein,
           float(),
           pos_integer(),
-          list(binary()),
-          list(binary())
+          [binary()],
+          [binary()]
         ) :: nil | binary()
   def witch(
         command,
@@ -25,13 +26,12 @@ defmodule Witch do
     if verbose do
       IO.puts("Searching for '#{command}' in PATH...")
       IO.puts("Sensitivity: #{sensitivity}, Algorithm: #{algorithm}, Threshold: #{threshold}")
-
       IO.puts(
         "Ignoring: #{Enum.join(ignore, ", ")}, Ignored Directories: #{Enum.join(ignoredir, ", ")}"
       )
     end
 
-    # Check if an exact match exists
+    # Check if an exact match exists.
     if path = System.find_executable(command) do
       if verbose, do: IO.puts("Exact match found: #{path}")
       IO.puts(path)
@@ -39,20 +39,16 @@ defmodule Witch do
     else
       if verbose, do: IO.puts("Exact match not found. Gathering all executables from PATH...")
 
-      # Gather executables with filtering applied
+      # Gather executables sequentially.
       executables = get_all_executables(verbose, ignore, ignoredir)
 
+      # Compute similarity for each executable sequentially.
       matches =
         executables
-        |> Task.async_stream(
-          fn exe ->
-            {exe, Similaritysearch.similarity(command, exe, sensitivity, verbose, algorithm)}
-          end,
-          ordered: false,
-          max_concurrency: System.schedulers_online() * 2
-        )
-        |> Stream.map(fn {:ok, result} -> result end)
-        |> Stream.filter(fn {_exe, sim} -> sim >= threshold end)
+        |> Enum.map(fn exe ->
+          {exe, Similaritysearch.similarity(command, exe, sensitivity, verbose, algorithm)}
+        end)
+        |> Enum.filter(fn {_exe, sim} -> sim >= threshold end)
         |> Enum.sort_by(fn {_exe, sim} -> -sim end)
         |> Enum.take(num_matches)
 
@@ -67,6 +63,9 @@ defmodule Witch do
     end
   end
 
+  # ---------------------------------------------------
+  # Directory and File Handling (Sequential)
+  # ---------------------------------------------------
   defp collect_from_dir(dir, ignore_patterns, ignored_dirs) do
     if ignore_dir?(dir, ignored_dirs) do
       []
@@ -89,9 +88,9 @@ defmodule Witch do
   # ===============================================================
   # get_all_executables/3
   #
-  # Returns a list of filenames found in directories specified by the PATH,
-  # excluding directories matching any pattern in ignoredir and files that
-  # include any of the ignore patterns. Uses parallel processing for improved performance.
+  # Returns a list of unique filenames found in the PATH directories,
+  # excluding directories matching ignoredir patterns and files that
+  # contain any of the ignore patterns. This version is entirely sequential.
   # ===============================================================
   defp get_all_executables(verbose, ignore_patterns, ignored_dirs) do
     separator =
@@ -100,12 +99,7 @@ defmodule Witch do
     executables =
       System.get_env("PATH", "")
       |> String.split(separator, trim: true)
-      |> Task.async_stream(
-        fn dir -> collect_from_dir(dir, ignore_patterns, ignored_dirs) end,
-        ordered: false,
-        timeout: 10_000
-      )
-      |> Enum.flat_map(fn {:ok, files} -> files end)
+      |> Enum.flat_map(fn dir -> collect_from_dir(dir, ignore_patterns, ignored_dirs) end)
       |> Enum.uniq()
 
     if verbose, do: IO.puts("Total unique executables found: #{length(executables)}")

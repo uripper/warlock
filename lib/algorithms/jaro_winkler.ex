@@ -13,7 +13,6 @@ defmodule JaroWinkler do
 
   # 1. Public API
   # --------------
-
   @doc """
   Jaro‑Winkler similarity between `s1` and `s2`.
 
@@ -32,7 +31,7 @@ defmodule JaroWinkler do
 
     cond do
       len1 == 0 and len2 == 0 -> 1.0
-      len1 == 0 or  len2 == 0 -> 0.0
+      len1 == 0 or len2 == 0 -> 0.0
       true -> compute_jaro_winkler(s1_chars, s2_chars, len1, len2)
     end
   end
@@ -62,12 +61,12 @@ defmodule JaroWinkler do
   end
 
   # Extracts a match from the given range and updates `s2_matches`.
-  # **FIX**: use `Enum.at/3` with default to guarantee boolean.
+  # Uses Enum.at/3 with a default to ensure a boolean is returned.
   defp extract_match(i, range, s1_chars, s2_chars, s2_matches) do
     Enum.reduce_while(range, {false, s2_matches}, fn j, {found, acc} ->
-      if  not found and
-          not Enum.at(acc, j, true) and
-          Enum.at(s1_chars, i) == Enum.at(s2_chars, j) do
+      if not found and
+           not Enum.at(acc, j, true) and
+           Enum.at(s1_chars, i) == Enum.at(s2_chars, j) do
         {:halt, {true, List.replace_at(acc, j, true)}}
       else
         {:cont, {found, acc}}
@@ -75,8 +74,8 @@ defmodule JaroWinkler do
     end)
   end
 
-  # Scan the window `[low, high]` in `s2` for a character that matches `s1[i]`.
-  # Returns `{found?, updated_s2_matches}`.
+  # Scan the window [low, high] in s2 for a character that matches s1[i].
+  # Returns {found?, updated_s2_matches}.
   defp find_match_in_window(i, low, high, s1_chars, s2_chars, s2_matches) do
     if low > high do
       {false, s2_matches}
@@ -88,38 +87,6 @@ defmodule JaroWinkler do
   # ============================
   # Match‑Count Helpers
   # ============================
-
-  defp count_matches_parallel(s1_chars, s2_chars, match_distance, len1, len2) do
-    s1_matches = List.duplicate(false, len1)
-    s2_matches0 = List.duplicate(false, len2)
-
-    0..(len1 - 1)
-    |> Task.async_stream(
-      fn i ->
-        low  = max(0, i - match_distance)
-        high = min(len2 - 1, i + match_distance)
-
-        {found, s2_updated} =
-          find_match_in_window(i, low, high, s1_chars, s2_chars, s2_matches0)
-
-        {i, found, s2_updated}
-      end,
-      ordered: true,
-      max_concurrency: System.schedulers_online()
-    )
-    |> Enum.reduce({0, s1_matches, s2_matches0}, fn {:ok, {i, found, s2_for_i}},
-                                                   {count, s1_m, merged_s2_m} ->
-      new_count = if found, do: count + 1, else: count
-      new_s1_m  = List.replace_at(s1_m, i, found)
-
-      new_merged_s2_m =
-        Enum.zip(merged_s2_m, s2_for_i)
-        |> Enum.map(fn {a, b} -> a or b end)
-
-      {new_count, new_s1_m, new_merged_s2_m}
-    end)
-  end
-
   defp count_matches_sequential(s1_chars, s2_chars, match_distance, len1, len2) do
     s1_matches = List.duplicate(false, len1)
     s2_matches = List.duplicate(false, len2)
@@ -137,48 +104,37 @@ defmodule JaroWinkler do
   end
 
   # Counts matches under the Jaro window rule.
-  # Returns `{match_count, s1_match_flags, s2_match_flags}`.
   defp count_matches(s1_chars, s2_chars, match_distance) do
     len1 = length(s1_chars)
     len2 = length(s2_chars)
-
-    if len1 > 20 and len2 > 20 do
-      count_matches_parallel(s1_chars, s2_chars, match_distance, len1, len2)
-    else
-      count_matches_sequential(s1_chars, s2_chars, match_distance, len1, len2)
-    end
+    count_matches_sequential(s1_chars, s2_chars, match_distance, len1, len2)
   end
 
   # ============================
   # Prefix & Score Computation
   # ============================
-
-  # Find common prefix length (max 4 per original JW spec).
+  # Find common prefix length (capped at 4 characters per classical spec).
   defp find_prefix_length(s1_chars, s2_chars) do
     Enum.zip(s1_chars, s2_chars)
     |> Enum.take_while(fn {c1, c2} -> c1 == c2 end)
-    |> Enum.take(4)                # JW caps prefix at 4 chars
+    |> Enum.take(4)
     |> Enum.count()
   end
 
-  # Compute the full Jaro‑Winkler score.
+  # Compute the full Jaro-Winkler score.
   defp compute_jaro_winkler(s1_chars, s2_chars, len1, len2) do
     match_distance = max(div(max(len1, len2), 2) - 1, 0)
-
-    {matches, s1_matches, s2_matches} =
-      count_matches(s1_chars, s2_chars, match_distance)
+    {matches, s1_matches, s2_matches} = count_matches(s1_chars, s2_chars, match_distance)
 
     if matches == 0 do
       0.0
     else
       transpositions = list_constructor(s1_matches, s2_matches, s1_chars, s2_chars)
-
       jaro =
         (matches / len1 + matches / len2 +
          (matches - transpositions) / matches) / 3.0
 
       prefix_length = find_prefix_length(s1_chars, s2_chars)
-
       jaro + prefix_length * 0.1 * (1 - jaro)
     end
   end

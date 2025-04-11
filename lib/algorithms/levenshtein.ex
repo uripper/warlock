@@ -16,7 +16,7 @@ defmodule Levenshtein do
   """
 
   # 1. Public API
-
+  # --------------
   @doc """
   Computes the normalized Levenshtein similarity score between two strings.
 
@@ -40,7 +40,7 @@ defmodule Levenshtein do
     la = length(a_chars)
     lb = length(b_chars)
 
-    # Seed matrix with row / column indices.
+    # Seed matrix with row/column indices.
     base_matrix =
       for i <- 0..la do
         for j <- 0..lb do
@@ -53,23 +53,23 @@ defmodule Levenshtein do
       end
 
     updated_matrix =
-      if la > 10 and lb > 10 do
-        parallel_update(base_matrix, a_chars, b_chars, sensitivity, la, lb)
-      else
-        sequential_update(base_matrix, a_chars, b_chars, sensitivity, la, lb)
-      end
+      sequential_update(base_matrix, a_chars, b_chars, sensitivity, la, lb)
 
     Enum.at(Enum.at(updated_matrix, la), lb)
   end
 
-
   # ====================
-  # Levenshtein helpers
+  # Levenshtein Helpers
   # ====================
 
   # Computes the edit‑distance value for a single matrix cell (i, j).
   defp compute_distance_cell(a_chars, b_chars, i, j, matrix, sensitivity) do
-    cost = if Enum.at(a_chars, i - 1) == Enum.at(b_chars, j - 1), do: 0, else: sensitivity
+    cost =
+      if Enum.at(a_chars, i - 1) == Enum.at(b_chars, j - 1) do
+        0
+      else
+        sensitivity
+      end
 
     deletion = Enum.at(Enum.at(matrix, i - 1), j) + 1
     insertion = Enum.at(Enum.at(matrix, i), j - 1) + 1
@@ -80,7 +80,9 @@ defmodule Levenshtein do
 
   # Update a value inside the 2‑D matrix.
   defp update_matrix(matrix, i, j, value) do
-    List.update_at(matrix, i, fn row -> List.replace_at(row, j, value) end)
+    List.update_at(matrix, i, fn row ->
+      List.replace_at(row, j, value)
+    end)
   end
 
   # Build a full matrix row sequentially (used by sequential update).
@@ -91,42 +93,10 @@ defmodule Levenshtein do
     end)
   end
 
-  # Sequential update of the matrix (used when inputs are small).
+  # Sequential update of the matrix.
   defp sequential_update(matrix, a_chars, b_chars, sensitivity, la, lb) do
     Enum.reduce(1..la, matrix, fn i, acc ->
       update_row_sequential(i, acc, a_chars, b_chars, sensitivity, lb)
-    end)
-  end
-
-  # Parallel update of the matrix (used when inputs are large).
-  defp parallel_update(matrix, a_chars, b_chars, sensitivity, la, lb) do
-    1..la
-    |> Task.async_stream(
-      fn i ->
-        row = Enum.at(matrix, i)
-
-        updated_row =
-          Enum.reduce(1..lb, row, fn j, row_acc ->
-            cell =
-              compute_distance_cell(
-                a_chars,
-                b_chars,
-                i,
-                j,
-                List.replace_at(matrix, i, row_acc),
-                sensitivity
-              )
-
-            List.replace_at(row_acc, j, cell)
-          end)
-
-        {i, updated_row}
-      end,
-      ordered: true,
-      max_concurrency: System.schedulers_online()
-    )
-    |> Enum.reduce(matrix, fn {:ok, {i, row}}, acc ->
-      List.replace_at(acc, i, row)
     end)
   end
 end
