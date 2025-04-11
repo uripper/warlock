@@ -2,7 +2,6 @@ defmodule Witch do
   @moduledoc """
   A command-line utility for finding executables in the system PATH.
   """
-
   @spec witch(
           nil | binary(),
           boolean(),
@@ -31,7 +30,7 @@ defmodule Witch do
       )
     end
 
-    # Check if an exact match exists.
+    # Check if an exact match exists
     if path = System.find_executable(command) do
       if verbose, do: IO.puts("Exact match found: #{path}")
       IO.puts(path)
@@ -39,10 +38,9 @@ defmodule Witch do
     else
       if verbose, do: IO.puts("Exact match not found. Gathering all executables from PATH...")
 
-      # Gather executables sequentially.
+      # Gather executables with filtering applied
       executables = get_all_executables(verbose, ignore, ignoredir)
 
-      # Compute similarity for each executable sequentially.
       matches =
         executables
         |> Enum.map(fn exe ->
@@ -63,9 +61,6 @@ defmodule Witch do
     end
   end
 
-  # ---------------------------------------------------
-  # Directory and File Handling (Sequential)
-  # ---------------------------------------------------
   defp collect_from_dir(dir, ignore_patterns, ignored_dirs) do
     if ignore_dir?(dir, ignored_dirs) do
       []
@@ -77,8 +72,18 @@ defmodule Witch do
     end
   end
 
+  # ----------------------------------------------------------------------------
+  # ignore_dir?/2:
+  #
+  # This implementation converts both the directory path and the ignore pattern
+  # to upper case so that the match is case-insensitive. Then it checks if the
+  # directory path contains the ignored substring.
+  # ----------------------------------------------------------------------------
   defp ignore_dir?(dir, ignored_dirs) do
-    Enum.any?(ignored_dirs, &Regex.match?(~r/^#{Regex.escape(&1)}$/, dir))
+    dir_up = String.upcase(dir)
+    Enum.any?(ignored_dirs, fn pattern ->
+      String.contains?(dir_up, String.upcase(pattern))
+    end)
   end
 
   defp ignore_file?(file, patterns) do
@@ -88,9 +93,9 @@ defmodule Witch do
   # ===============================================================
   # get_all_executables/3
   #
-  # Returns a list of unique filenames found in the PATH directories,
-  # excluding directories matching ignoredir patterns and files that
-  # contain any of the ignore patterns. This version is entirely sequential.
+  # Returns a list of filenames found in directories specified by the PATH,
+  # excluding directories that contain any of the ignoredir patterns and files
+  # that include any of the ignore patterns. This version is sequential.
   # ===============================================================
   defp get_all_executables(verbose, ignore_patterns, ignored_dirs) do
     separator =
