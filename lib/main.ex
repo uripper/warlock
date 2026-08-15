@@ -8,17 +8,25 @@ defmodule Warlock do
   # Public entry point called by the escript runtime.
   @version Mix.Project.config()[:version]
 
+  @spec version() :: String.t()
   def version do
     @version
   end
 
+  @spec main([String.t()]) :: String.t() | nil | :ok
   def main(args) do
-    case Argparse.parse_args(args) do
-      {verbose, command, sensitivity, algorithm, threshold, num_matches, ignore, ignoredir} when not is_nil(command) ->
-        Witch.witch(command, verbose, sensitivity, algorithm, threshold, num_matches, ignore, ignoredir)
-
-      _ ->
-        IO.puts("Usage: warlock [--verbose] [--threshold=0-1.0] [--algorithm=[\"lev\", \"jw\"]] <command>")
-    end
+    args
+    |> Argparse.parse_args()
+    |> run()
   end
+
+  defp run({command, search_options}) when is_binary(command) do
+    Witch.witch(command, search_options)
+  end
+
+  defp run(_),
+    do:
+      IO.puts(
+        ~s(Usage: warlock [--verbose] [--threshold=0-1.0] [--algorithm=["lev", "jw"]] <command>)
+      )
 end

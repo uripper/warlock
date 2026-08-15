@@ -5,8 +5,8 @@ defmodule Warlock.Application do
 
   use Application
 
-  @impl true
-  def start(_type, _args) do
+  @impl Application
+  def start(_, _) do
     children = [
       # Starts a worker by calling: Warlock.Worker.start_link(arg)
       # {Warlock.Worker, arg}
