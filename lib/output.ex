@@ -25,14 +25,14 @@ defmodule Output do
   @doc """
   Prints a formatted suggestions table.
 
-  Given a list of suggestion tuples `{suggestion, similarity}` along with the input
-  command and verbose flag, this function prints a table with columns for the suggested
-  command, its location (as determined by `System.find_executable/1`), and optionally
-  its similarity score formatted to two decimal places.
+  Given suggestion tuples along with the input command and verbose flag, this function
+  prints a table with columns for the suggested command, its location, and optionally
+  its similarity score formatted to two decimal places. Search results may carry their
+  already-resolved path as `{suggestion, path, similarity}`.
 
   ## Parameters
 
-    - `matches`: A list of tuples in the form `{suggestion, similarity}`.
+    - `matches`: `{suggestion, similarity}` or `{suggestion, path, similarity}` tuples.
     - `command`: The original command (used for highlighting differences).
     - `verbose`: A boolean flag; if `true`, a similarity score column is displayed.
 
@@ -40,45 +40,66 @@ defmodule Output do
 
       iex> Output.print_suggestions_table([{"ls", 0.95}], "ll", true)
   """
+  @spec print_suggestions_table(
+          [{String.t(), number()} | {String.t(), String.t(), number()}],
+          String.t(),
+          boolean()
+        ) :: :ok
   def print_suggestions_table(matches, command, verbose) do
+    case Enum.flat_map(matches, &resolve_match/1) do
+      [] -> IO.puts("Command not found and no close matches.")
+      resolved_matches -> print_table(resolved_matches, command, verbose)
+    end
+  end
+
+  defp print_table(matches, command, verbose) do
     cmd_width = 20
     path_width = 50
 
-    valid_matches =
-      matches
-      |> Enum.filter(fn {suggestion, _sim} -> System.find_executable(suggestion) != nil end)
+    print_header(cmd_width, path_width, verbose)
 
-    if valid_matches == [] do
-      IO.puts("Command not found and no close matches.")
-    else
-      # Build Table Header
-      header =
-        pad_string("Suggested Command", cmd_width) <>
-          " | " <>
-          pad_string("Location", path_width) <>
-          if verbose, do: " | " <> pad_string("Similarity", 10), else: ""
+    Enum.each(matches, fn match ->
+      print_match(match, command, cmd_width, path_width, verbose)
+    end)
+  end
 
-      IO.puts(header)
+  defp print_header(cmd_width, path_width, verbose) do
+    header =
+      pad_string("Suggested Command", cmd_width) <>
+        " | " <>
+        pad_string("Location", path_width) <>
+        if verbose, do: " | " <> pad_string("Similarity", 10), else: ""
 
-      sep_length = cmd_width + path_width + 3 + if verbose, do: 13, else: 0
-      IO.puts(String.duplicate("-", sep_length))
+    IO.puts(header)
 
-      # Iterate and Print Matches
-      Enum.each(valid_matches, fn {suggestion, sim} ->
-        highlighted = highlight_differences(command, suggestion)
-        suggestion_path = System.find_executable(suggestion)
+    separator_length = cmd_width + path_width + 3 + if verbose, do: 13, else: 0
 
-        base_line =
-          pad_string(highlighted, cmd_width) <>
-            " | " <> pad_string(suggestion_path, path_width)
+    "-"
+    |> String.duplicate(separator_length)
+    |> IO.puts()
+  end
 
-        line =
-          base_line <>
-            format_similarity(sim, verbose)
+  defp print_match({suggestion, path, similarity}, command, cmd_width, path_width, verbose) do
+    highlighted = highlight_differences(command, suggestion)
 
-        IO.puts(line)
-      end)
+    line =
+      pad_string(highlighted, cmd_width) <>
+        " | " <>
+        pad_string(path, path_width) <>
+        format_similarity(similarity, verbose)
+
+    IO.puts(line)
+  end
+
+  defp resolve_match({suggestion, similarity}) do
+    case System.find_executable(suggestion) do
+      nil -> []
+      path -> [{suggestion, path, similarity}]
     end
+  end
+
+  defp resolve_match({suggestion, path, similarity}) do
+    [{suggestion, path, similarity}]
   end
 
   # ===========================================
@@ -86,7 +107,8 @@ defmodule Output do
   # ===========================================
   defp format_similarity(similarity, verbose) do
     if verbose do
-      similarity_str = :io_lib.format("~.2f", [similarity]) |> IO.iodata_to_binary()
+      formatted_similarity = :io_lib.format("~.2f", [similarity])
+      similarity_str = IO.iodata_to_binary(formatted_similarity)
       " | " <> pad_string(similarity_str, 10)
     else
       ""
@@ -121,8 +143,7 @@ defmodule Output do
     common = Enum.zip(input_chars, sugg_chars)
 
     highlighted =
-      common
-      |> Enum.map_join(fn {c1, c2} ->
+      Enum.map_join(common, fn {c1, c2} ->
         if c1 == c2 do
           "#{@ansi_green}#{c2}#{@ansi_reset}"
         else

@@ -24,7 +24,10 @@ mix deps.get
 mix escript.build
 ```
 
-The above commands will generate an executable named `warlock` in your project directory.
+The build generates `warlock_beam`, the fuzzy-search fallback used by the checked-in
+`warlock` launcher. Keep both files together. The launcher resolves the common exact-match
+case directly from `PATH`; it starts the BEAM only when fuzzy matching or option handling is
+needed.
 
 ## Usage
 
@@ -68,13 +71,24 @@ When you run Warlock, the following happens:
    - The command name to search for.
 
 2. **Exact Match Search:**  
-   Warlock first attempts to locate an executable that exactly matches the given command name.
+   For a plain command lookup, the lightweight shell launcher searches `PATH` before starting
+   the BEAM. Invocations with options are delegated to the full Elixir CLI so validation and
+   verbose output remain consistent.
 
-3. **Fuzzy Matching:**  
-   If no exact match is found, Warlock gathers all executables from your system PATH and calculates similarity scores using a Levenshtein distance algorithm.  
-   The sensitivity value affects the substitution cost in the algorithm—lower values make the matching more forgiving, while higher values make it more sensitive.
+3. **Executable Collection:**
 
-4. **Results Display:**  
+   Warlock scans PATH directories concurrently, preserves PATH precedence, and removes
+   non-runnable files before returning suggestions. On WSL-mounted Windows directories,
+   command extensions are filtered before scoring so DLLs and resource files are excluded.
+
+4. **Fuzzy Matching:**
+
+   Candidates are scored with Jaro-Winkler by default or Levenshtein when selected. Query
+   data is prepared once, and Levenshtein searches stop early when the configured threshold
+   can no longer be reached.
+
+5. **Results Display:**
+
    If close matches (with a similarity score of 0.6 or greater) are found, Warlock displays them in what is possibly a formatted table, with colored highlights showing the differences.
 
 ## Development
@@ -92,12 +106,15 @@ warlock
 ├── test
 │   ├── test_helper.exs
 │   └── warlock_test.exs
-└── warlock
+├── warlock
+└── warlock_beam
 ```
 
 - **lib/warlock.ex:** Contains the main logic for parsing arguments, searching executables, fuzzy matching, and displaying results.
 - **lib/warlock/application.ex:** Contains the OTP application start logic.
 - **mix.exs:** The project configuration file.
+- **warlock:** Lightweight exact-match launcher.
+- **warlock_beam:** Generated escript used for fuzzy searches and full option handling.
 - **test:** Contains tests for the project.
 
 ## Contributing

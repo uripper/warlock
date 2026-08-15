@@ -1,141 +1,82 @@
 defmodule JaroWinkler do
   @moduledoc """
-  Computes the Jaro‑Winkler similarity between two strings.
+  Computes case-insensitive Jaro-Winkler similarity between two strings.
 
-  The result is a float between 0.0 (no similarity) and 1.0 (exact match).
-  All comparisons are case‑insensitive.
+  The result is a float between `0.0` for no similarity and `1.0` for an
+  exact match.
 
   ## Examples
 
       iex> JaroWinkler.similarity("hello", "hallo")
-      0.8666666666666667
+      0.88
   """
 
-  # 1. Public API
-  # --------------
+  @max_prefix_length 4
+  @scaling_factor 0.1
+  @boost_threshold 0.7
+
   @doc """
-  Jaro‑Winkler similarity between `s1` and `s2`.
-
-  ## Parameters
-    * `s1` – first string.
-    * `s2` – second string.
-
-  ## Returns
-    * Float in the range `0.0..1.0`.
+  Computes the case-insensitive Jaro-Winkler similarity between two strings.
   """
-  def similarity(s1, s2) do
-    s1_chars = s1 |> String.downcase() |> String.graphemes()
-    s2_chars = s2 |> String.downcase() |> String.graphemes()
-    len1 = length(s1_chars)
-    len2 = length(s2_chars)
+  @spec similarity(String.t(), String.t()) :: float()
+  def similarity(first_string, second_string) do
+    first_normalized = String.downcase(first_string)
+    second_normalized = String.downcase(second_string)
 
-    cond do
-      len1 == 0 and len2 == 0 -> 1.0
-      len1 == 0 or len2 == 0 -> 0.0
-      true -> compute_jaro_winkler(s1_chars, s2_chars, len1, len2)
+    similarity_prepared(
+      first_normalized,
+      prepare_prefix(first_normalized),
+      second_normalized
+    )
+  end
+
+  @doc false
+  @spec similarity_normalized(String.t(), String.t()) :: float()
+  def similarity_normalized(first_string, second_string) do
+    similarity_prepared(first_string, prepare_prefix(first_string), second_string)
+  end
+
+  @doc false
+  @spec prepare_prefix(String.t()) :: [String.grapheme()]
+  def prepare_prefix(string) do
+    take_graphemes(string, @max_prefix_length, [])
+  end
+
+  @doc false
+  @spec similarity_prepared(String.t(), [String.grapheme()], String.t()) :: float()
+  def similarity_prepared(first_string, first_prefix, second_string) do
+    jaro = String.jaro_distance(first_string, second_string)
+
+    if jaro > @boost_threshold do
+      prefix_length = prefix_length(first_prefix, second_string)
+      jaro + prefix_length * @scaling_factor * (1.0 - jaro)
+    else
+      jaro
     end
   end
 
-  # ============================
-  # Jaro‑Winkler Helpers
-  # ============================
+  defp take_graphemes(_, 0, graphemes), do: Enum.reverse(graphemes)
+  defp take_graphemes("", _, graphemes), do: Enum.reverse(graphemes)
 
-  # Build lists of matched characters and count transpositions.
-  defp list_constructor(s1_matches, s2_matches, s1_chars, s2_chars) do
-    s1_matched =
-      s1_matches
-      |> Enum.with_index()
-      |> Enum.filter(fn {flag, _} -> flag end)
-      |> Enum.map(fn {_, idx} -> Enum.at(s1_chars, idx) end)
-
-    s2_matched =
-      s2_matches
-      |> Enum.with_index()
-      |> Enum.filter(fn {flag, _} -> flag end)
-      |> Enum.map(fn {_, idx} -> Enum.at(s2_chars, idx) end)
-
-    s1_matched
-    |> Enum.zip(s2_matched)
-    |> Enum.count(fn {c1, c2} -> c1 != c2 end)
-    |> Kernel./(2)
+  defp take_graphemes(string, remaining, graphemes) do
+    {grapheme, rest} = String.next_grapheme(string)
+    take_graphemes(rest, remaining - 1, [grapheme | graphemes])
   end
 
-  # Extracts a match from the given range and updates `s2_matches`.
-  # Uses Enum.at/3 with a default to ensure a boolean is returned.
-  defp extract_match(i, range, s1_chars, s2_chars, s2_matches) do
-    Enum.reduce_while(range, {false, s2_matches}, fn j, {found, acc} ->
-      if not found and
-           not Enum.at(acc, j, true) and
-           Enum.at(s1_chars, i) == Enum.at(s2_chars, j) do
-        {:halt, {true, List.replace_at(acc, j, true)}}
-      else
-        {:cont, {found, acc}}
-      end
-    end)
+  defp prefix_length(first_prefix, second_string) do
+    matching_prefix_length(first_prefix, second_string, 0)
   end
 
-  # Scan the window [low, high] in s2 for a character that matches s1[i].
-  # Returns {found?, updated_s2_matches}.
-  defp find_match_in_window(i, low, high, s1_chars, s2_chars, s2_matches) do
-    if low > high do
-      {false, s2_matches}
-    else
-      extract_match(i, low..high, s1_chars, s2_chars, s2_matches)
-    end
-  end
+  defp matching_prefix_length([], _, count), do: count
+  defp matching_prefix_length(_, "", count), do: count
 
-  # ============================
-  # Match‑Count Helpers
-  # ============================
-  defp count_matches_sequential(s1_chars, s2_chars, match_distance, len1, len2) do
-    s1_matches = List.duplicate(false, len1)
-    s2_matches = List.duplicate(false, len2)
+  defp matching_prefix_length([first_grapheme | rest], second_string, count) do
+    case String.next_grapheme(second_string) do
+      {^first_grapheme, remaining_string} ->
+        matching_prefix_length(rest, remaining_string, count + 1)
 
-    Enum.reduce(0..(len1 - 1), {0, s1_matches, s2_matches}, fn i, {m, s1_m, s2_m} ->
-      low  = max(0, i - match_distance)
-      high = min(len2 - 1, i + match_distance)
-
-      {found, updated_s2_m} =
-        find_match_in_window(i, low, high, s1_chars, s2_chars, s2_m)
-
-      new_m = if found, do: m + 1, else: m
-      {new_m, List.replace_at(s1_m, i, found), updated_s2_m}
-    end)
-  end
-
-  # Counts matches under the Jaro window rule.
-  defp count_matches(s1_chars, s2_chars, match_distance) do
-    len1 = length(s1_chars)
-    len2 = length(s2_chars)
-    count_matches_sequential(s1_chars, s2_chars, match_distance, len1, len2)
-  end
-
-  # ============================
-  # Prefix & Score Computation
-  # ============================
-  # Find common prefix length (capped at 4 characters per classical spec).
-  defp find_prefix_length(s1_chars, s2_chars) do
-    Enum.zip(s1_chars, s2_chars)
-    |> Enum.take_while(fn {c1, c2} -> c1 == c2 end)
-    |> Enum.take(4)
-    |> Enum.count()
-  end
-
-  # Compute the full Jaro-Winkler score.
-  defp compute_jaro_winkler(s1_chars, s2_chars, len1, len2) do
-    match_distance = max(div(max(len1, len2), 2) - 1, 0)
-    {matches, s1_matches, s2_matches} = count_matches(s1_chars, s2_chars, match_distance)
-
-    if matches == 0 do
-      0.0
-    else
-      transpositions = list_constructor(s1_matches, s2_matches, s1_chars, s2_chars)
-      jaro =
-        (matches / len1 + matches / len2 +
-         (matches - transpositions) / matches) / 3.0
-
-      prefix_length = find_prefix_length(s1_chars, s2_chars)
-      jaro + prefix_length * 0.1 * (1 - jaro)
+      _ ->
+        count
     end
   end
 end
