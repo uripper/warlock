@@ -5,7 +5,7 @@ defmodule Warlock.MixProject do
     [
       app: :warlock,
       version: "0.1.4",
-      elixir: "~> 1.18",
+      elixir: "~> 1.20",
       escript: [main_module: Warlock],
       start_permanent: Mix.env() == :prod,
       deps: deps()
@@ -23,7 +23,7 @@ defmodule Warlock.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false}
     ]
   end
 end
